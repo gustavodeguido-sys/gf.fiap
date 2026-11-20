@@ -1,0 +1,883 @@
+{
+  "info": {
+    "name": "Fintech FIAP - API",
+    "description": "Requisições da API Fintech (usuários, contas bancárias, investimentos e login), com casos de sucesso e de erro.\n\nComo usar:\n1. Suba a API (`.\\mvnw.cmd spring-boot:run` em backend/). A variável `baseUrl` aponta para http://localhost:8080.\n2. Rode a collection inteira no Collection Runner, na ordem. As pastas dependem umas das outras: os ids criados (idUsuario, idConta, idInvestimento) são salvos em variáveis da collection.\n3. A pasta 5 apaga tudo o que foi criado, então a collection pode ser rodada várias vezes. E-mail, CPF e número da conta são gerados a cada execução.\n\nO status esperado está no fim do nome de cada requisição, ex.: (404). Um script da collection confere esse status, o header Location nos 201 e o formato do corpo de erro.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "idInexistente", "value": "999999999" },
+    { "key": "idUsuario", "value": "" },
+    { "key": "idConta", "value": "" },
+    { "key": "idInvestimento", "value": "" },
+    { "key": "emailUsuario", "value": "" },
+    { "key": "senhaUsuario", "value": "" },
+    { "key": "cpfUsuario", "value": "" },
+    { "key": "cpfAleatorio", "value": "" },
+    { "key": "numeroConta", "value": "" },
+    { "key": "saldoConta", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "function digitoVerificador(base) {",
+          "  const soma = base.reduce((total, digito, i) => total + digito * (base.length + 1 - i), 0);",
+          "  const resto = (soma * 10) % 11;",
+          "  return resto === 10 ? 0 : resto;",
+          "}",
+          "function gerarCpf() {",
+          "  let digitos;",
+          "  do {",
+          "    digitos = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));",
+          "  } while (digitos.every(d => d === digitos[0]));",
+          "  digitos.push(digitoVerificador(digitos));",
+          "  digitos.push(digitoVerificador(digitos));",
+          "  return digitos.join('');",
+          "}",
+          "pm.collectionVariables.set('cpfAleatorio', gerarCpf());"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const esperado = pm.info.requestName.match(/\\((\\d{3})\\)$/);",
+          "if (esperado) {",
+          "  const codigo = Number(esperado[1]);",
+          "  pm.test(`Status ${codigo}`, () => pm.response.to.have.status(codigo));",
+          "  if (codigo === 201) {",
+          "    pm.test('Header Location presente', () => pm.response.to.have.header('Location'));",
+          "  }",
+          "  if (codigo >= 400) {",
+          "    pm.test('Corpo de erro padronizado (ErroResponseDTO)', () => {",
+          "      const erro = pm.response.json();",
+          "      pm.expect(erro.status).to.eql(codigo);",
+          "      pm.expect(erro.mensagem).to.be.a('string');",
+          "      pm.expect(erro).to.have.property('dataHora');",
+          "      pm.expect(erro).to.have.property('caminho');",
+          "    });",
+          "  }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1 - Usuários",
+      "item": [
+        {
+          "name": "Criar usuário (201)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('emailUsuario', `teste.${Date.now()}@email.com`);",
+                  "pm.collectionVariables.set('senhaUsuario', 'Senha@123');",
+                  "pm.collectionVariables.set('cpfUsuario', pm.collectionVariables.get('cpfAleatorio'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const usuario = pm.response.json();",
+                  "  pm.collectionVariables.set('idUsuario', usuario.id);",
+                  "  pm.test('Resposta não expõe a senha', () => pm.expect(usuario).to.not.have.property('senha'));",
+                  "  pm.test('E-mail gravado em minúsculas', () => pm.expect(usuario.email).to.eql(pm.collectionVariables.get('emailUsuario')));",
+                  "  pm.test('dataCadastro preenchida pelo banco', () => pm.expect(usuario.dataCadastro).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Usuário Teste Postman\",\n  \"email\": \"{{emailUsuario}}\",\n  \"senha\": \"{{senhaUsuario}}\",\n  \"cpf\": \"{{cpfUsuario}}\",\n  \"dataNascimento\": \"1995-05-20\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/usuarios"
+          }
+        },
+        {
+          "name": "Listar usuários (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Retorna uma lista', () => pm.expect(pm.response.json()).to.be.an('array'));"]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/usuarios" }
+        },
+        {
+          "name": "Buscar usuário por id (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Retorna o usuário pedido', () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('idUsuario'))));"]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/usuarios/{{idUsuario}}" }
+        },
+        {
+          "name": "Atualizar usuário (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Nome atualizado', () => pm.expect(pm.response.json().nome).to.eql('Usuário Teste Atualizado'));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Usuário Teste Atualizado\",\n  \"email\": \"{{emailUsuario}}\",\n  \"senha\": \"{{senhaUsuario}}\",\n  \"cpf\": \"{{cpfUsuario}}\",\n  \"dataNascimento\": \"1995-05-20\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/usuarios/{{idUsuario}}"
+          }
+        },
+        {
+          "name": "[Erro] Criar usuário com e-mail duplicado (409)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Outro Usuário\",\n  \"email\": \"{{emailUsuario}}\",\n  \"senha\": \"Senha@123\",\n  \"cpf\": \"{{cpfAleatorio}}\",\n  \"dataNascimento\": \"1990-01-01\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/usuarios"
+          }
+        },
+        {
+          "name": "[Erro] Criar usuário com CPF duplicado (409)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Outro Usuário\",\n  \"email\": \"outro.{{$timestamp}}@email.com\",\n  \"senha\": \"Senha@123\",\n  \"cpf\": \"{{cpfUsuario}}\",\n  \"dataNascimento\": \"1990-01-01\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/usuarios"
+          }
+        },
+        {
+          "name": "[Erro] Criar usuário com campos inválidos (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Lista os campos inválidos', () => {",
+                  "  const campos = pm.response.json().campos.map(c => c.campo);",
+                  "  pm.expect(campos).to.include.members(['nome', 'email', 'senha', 'cpf', 'dataNascimento']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"\",\n  \"email\": \"nao-e-um-email\",\n  \"senha\": \"123\",\n  \"cpf\": \"12345678900\",\n  \"dataNascimento\": \"2999-01-01\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/usuarios"
+          }
+        },
+        {
+          "name": "[Erro] Criar usuário menor de idade (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Usuário Menor\",\n  \"email\": \"menor.{{$timestamp}}@email.com\",\n  \"senha\": \"Senha@123\",\n  \"cpf\": \"{{cpfAleatorio}}\",\n  \"dataNascimento\": \"2015-01-01\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/usuarios"
+          }
+        },
+        {
+          "name": "[Erro] Criar usuário com JSON mal formado (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Sem fechar\",\n  \"email\": ",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/usuarios"
+          }
+        },
+        {
+          "name": "[Erro] Buscar usuário inexistente (404)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/usuarios/{{idInexistente}}" }
+        },
+        {
+          "name": "[Erro] Buscar usuário com id não numérico (400)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/usuarios/abc" }
+        },
+        {
+          "name": "[Erro] Método HTTP não suportado (405)",
+          "request": { "method": "PATCH", "header": [], "url": "{{baseUrl}}/api/usuarios/{{idUsuario}}" }
+        },
+        {
+          "name": "[Erro] Rota inexistente (404)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/rota-inexistente" }
+        }
+      ]
+    },
+    {
+      "name": "2 - Autenticação",
+      "item": [
+        {
+          "name": "Login válido (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const usuario = pm.response.json();",
+                  "pm.test('Retorna o usuário logado', () => pm.expect(usuario.id).to.eql(Number(pm.collectionVariables.get('idUsuario'))));",
+                  "pm.test('Resposta não expõe a senha', () => pm.expect(usuario).to.not.have.property('senha'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{emailUsuario}}\",\n  \"senha\": \"{{senhaUsuario}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "[Erro] Login com senha errada (401)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{emailUsuario}}\",\n  \"senha\": \"senha-errada\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "[Erro] Login com e-mail não cadastrado (401)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ninguem.{{$timestamp}}@email.com\",\n  \"senha\": \"Senha@123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "[Erro] Login sem e-mail e senha (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Contas bancárias",
+      "item": [
+        {
+          "name": "Criar conta (201)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.collectionVariables.set('numeroConta', String(Date.now()));"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const conta = pm.response.json();",
+                  "  pm.collectionVariables.set('idConta', conta.id);",
+                  "  pm.test('Saldo inicial 1000', () => pm.expect(Number(conta.saldo)).to.eql(1000));",
+                  "  pm.test('Conta ligada ao usuário', () => pm.expect(conta.idUsuario).to.eql(Number(pm.collectionVariables.get('idUsuario'))));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idUsuario\": {{idUsuario}},\n  \"nomeBanco\": \"Banco Postman\",\n  \"agencia\": \"0001\",\n  \"numeroConta\": \"{{numeroConta}}\",\n  \"tipo\": \"CORRENTE\",\n  \"saldoInicial\": 1000.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias"
+          }
+        },
+        {
+          "name": "Listar contas (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Retorna uma lista', () => pm.expect(pm.response.json()).to.be.an('array'));"]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/contas-bancarias" }
+        },
+        {
+          "name": "Listar contas do usuário (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Usuário tem exatamente 1 conta', () => pm.expect(pm.response.json()).to.have.lengthOf(1));"]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/contas-bancarias?idUsuario={{idUsuario}}" }
+        },
+        {
+          "name": "Buscar conta por id (200)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}" }
+        },
+        {
+          "name": "Atualizar conta (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const conta = pm.response.json();",
+                  "pm.test('Tipo atualizado', () => pm.expect(conta.tipo).to.eql('POUPANCA'));",
+                  "pm.test('Saldo não muda na atualização', () => pm.expect(Number(conta.saldo)).to.eql(1000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idUsuario\": {{idUsuario}},\n  \"nomeBanco\": \"Banco Postman\",\n  \"agencia\": \"0001\",\n  \"numeroConta\": \"{{numeroConta}}\",\n  \"tipo\": \"POUPANCA\",\n  \"saldoInicial\": 999999.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}"
+          }
+        },
+        {
+          "name": "Depositar (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Saldo 1000 + 500 = 1500', () => pm.expect(Number(pm.response.json().saldo)).to.eql(1500));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor\": 500.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}/depositos"
+          }
+        },
+        {
+          "name": "Sacar (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Saldo 1500 - 200 = 1300', () => pm.expect(Number(pm.response.json().saldo)).to.eql(1300));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor\": 200.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}/saques"
+          }
+        },
+        {
+          "name": "[Erro] Sacar acima do saldo (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor\": 999999.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}/saques"
+          }
+        },
+        {
+          "name": "[Erro] Depositar valor negativo (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor\": -50.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}/depositos"
+          }
+        },
+        {
+          "name": "[Erro] Depositar com 3 casas decimais (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor\": 10.123\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}/depositos"
+          }
+        },
+        {
+          "name": "[Erro] Criar conta duplicada (409)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idUsuario\": {{idUsuario}},\n  \"nomeBanco\": \"Banco Postman\",\n  \"agencia\": \"0001\",\n  \"numeroConta\": \"{{numeroConta}}\",\n  \"tipo\": \"CORRENTE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias"
+          }
+        },
+        {
+          "name": "[Erro] Criar conta para usuário inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idUsuario\": {{idInexistente}},\n  \"nomeBanco\": \"Banco Postman\",\n  \"agencia\": \"0001\",\n  \"numeroConta\": \"{{$timestamp}}\",\n  \"tipo\": \"CORRENTE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias"
+          }
+        },
+        {
+          "name": "[Erro] Criar conta com tipo inexistente (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idUsuario\": {{idUsuario}},\n  \"nomeBanco\": \"Banco Postman\",\n  \"agencia\": \"0001\",\n  \"numeroConta\": \"{{$timestamp}}\",\n  \"tipo\": \"SALARIO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias"
+          }
+        },
+        {
+          "name": "[Erro] Criar conta com saldo inicial negativo (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idUsuario\": {{idUsuario}},\n  \"nomeBanco\": \"Banco Postman\",\n  \"agencia\": \"0001\",\n  \"numeroConta\": \"{{$timestamp}}\",\n  \"tipo\": \"CORRENTE\",\n  \"saldoInicial\": -100.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias"
+          }
+        },
+        {
+          "name": "[Erro] Transferir conta para outro usuário (400)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idUsuario\": {{idInexistente}},\n  \"nomeBanco\": \"Banco Postman\",\n  \"agencia\": \"0001\",\n  \"numeroConta\": \"{{numeroConta}}\",\n  \"tipo\": \"CORRENTE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}"
+          }
+        },
+        {
+          "name": "[Erro] Listar contas de usuário inexistente (404)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/contas-bancarias?idUsuario={{idInexistente}}" }
+        },
+        {
+          "name": "[Erro] Buscar conta inexistente (404)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/contas-bancarias/{{idInexistente}}" }
+        },
+        {
+          "name": "[Erro] Excluir usuário que tem contas (400)",
+          "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/api/usuarios/{{idUsuario}}" }
+        }
+      ]
+    },
+    {
+      "name": "4 - Investimentos",
+      "item": [
+        {
+          "name": "Criar investimento CDB (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const investimento = pm.response.json();",
+                  "  pm.collectionVariables.set('idInvestimento', investimento.id);",
+                  "  pm.test('Data de aplicação = hoje quando omitida', () => pm.expect(investimento.dataAplicacao).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idConta}},\n  \"nome\": \"CDB Postman 2030\",\n  \"tipo\": \"CDB\",\n  \"valorAplicado\": 300.00,\n  \"taxaRentabilidade\": 11.5,\n  \"dataVencimento\": \"2030-12-31\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos"
+          }
+        },
+        {
+          "name": "Conferir saldo após aplicação (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Saldo 1300 - 300 aplicados = 1000', () => pm.expect(Number(pm.response.json().saldo)).to.eql(1000));"]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}" }
+        },
+        {
+          "name": "Listar investimentos (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Retorna uma lista', () => pm.expect(pm.response.json()).to.be.an('array'));"]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/investimentos" }
+        },
+        {
+          "name": "Listar investimentos da conta (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Conta tem exatamente 1 investimento', () => pm.expect(pm.response.json()).to.have.lengthOf(1));"]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/investimentos?idConta={{idConta}}" }
+        },
+        {
+          "name": "Buscar investimento por id (200)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/investimentos/{{idInvestimento}}" }
+        },
+        {
+          "name": "Atualizar investimento (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Valor aplicado atualizado', () => pm.expect(Number(pm.response.json().valorAplicado)).to.eql(400));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idConta}},\n  \"nome\": \"CDB Postman 2030 (reforçado)\",\n  \"tipo\": \"CDB\",\n  \"valorAplicado\": 400.00,\n  \"taxaRentabilidade\": 12.0,\n  \"dataVencimento\": \"2030-12-31\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos/{{idInvestimento}}"
+          }
+        },
+        {
+          "name": "Conferir saldo após atualização (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Diferença de 100 debitada: saldo 900', () => pm.expect(Number(pm.response.json().saldo)).to.eql(900));"]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}" }
+        },
+        {
+          "name": "[Erro] Aplicar valor acima do saldo (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idConta}},\n  \"nome\": \"CDB Grande Demais\",\n  \"tipo\": \"CDB\",\n  \"valorAplicado\": 999999.00,\n  \"taxaRentabilidade\": 11.5,\n  \"dataVencimento\": \"2030-12-31\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos"
+          }
+        },
+        {
+          "name": "[Erro] Aplicar valor zero (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idConta}},\n  \"nome\": \"CDB Zerado\",\n  \"tipo\": \"CDB\",\n  \"valorAplicado\": 0,\n  \"taxaRentabilidade\": 11.5,\n  \"dataVencimento\": \"2030-12-31\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos"
+          }
+        },
+        {
+          "name": "[Erro] Ações com data de vencimento (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idConta}},\n  \"nome\": \"Ações PETR4\",\n  \"tipo\": \"ACOES\",\n  \"valorAplicado\": 100.00,\n  \"taxaRentabilidade\": 0,\n  \"dataVencimento\": \"2030-12-31\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos"
+          }
+        },
+        {
+          "name": "[Erro] CDB sem data de vencimento (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idConta}},\n  \"nome\": \"CDB Sem Vencimento\",\n  \"tipo\": \"CDB\",\n  \"valorAplicado\": 100.00,\n  \"taxaRentabilidade\": 11.5\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos"
+          }
+        },
+        {
+          "name": "[Erro] Vencimento antes da aplicação (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idConta}},\n  \"nome\": \"LCI Vencida\",\n  \"tipo\": \"LCI\",\n  \"valorAplicado\": 100.00,\n  \"taxaRentabilidade\": 9.8,\n  \"dataVencimento\": \"2020-01-01\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos"
+          }
+        },
+        {
+          "name": "[Erro] Data de aplicação no futuro (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idConta}},\n  \"nome\": \"Fundo do Futuro\",\n  \"tipo\": \"FUNDO\",\n  \"valorAplicado\": 100.00,\n  \"taxaRentabilidade\": 8.2,\n  \"dataAplicacao\": \"2999-01-01\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos"
+          }
+        },
+        {
+          "name": "[Erro] Aplicar em conta inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idInexistente}},\n  \"nome\": \"CDB Sem Conta\",\n  \"tipo\": \"CDB\",\n  \"valorAplicado\": 100.00,\n  \"taxaRentabilidade\": 11.5,\n  \"dataVencimento\": \"2030-12-31\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos"
+          }
+        },
+        {
+          "name": "[Erro] Mover investimento para outra conta (400)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idConta\": {{idInexistente}},\n  \"nome\": \"CDB Postman 2030\",\n  \"tipo\": \"CDB\",\n  \"valorAplicado\": 400.00,\n  \"taxaRentabilidade\": 12.0,\n  \"dataVencimento\": \"2030-12-31\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/investimentos/{{idInvestimento}}"
+          }
+        },
+        {
+          "name": "[Erro] Listar investimentos de conta inexistente (404)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/investimentos?idConta={{idInexistente}}" }
+        },
+        {
+          "name": "[Erro] Buscar investimento inexistente (404)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/investimentos/{{idInexistente}}" }
+        },
+        {
+          "name": "[Erro] Excluir conta que tem investimentos (400)",
+          "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}" }
+        }
+      ]
+    },
+    {
+      "name": "5 - Exclusões e limpeza",
+      "item": [
+        {
+          "name": "Excluir investimento (204)",
+          "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/api/investimentos/{{idInvestimento}}" }
+        },
+        {
+          "name": "Conferir saldo após resgate (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const saldo = Number(pm.response.json().saldo);",
+                  "pm.test('Valor aplicado devolvido: saldo 900 + 400 = 1300', () => pm.expect(saldo).to.eql(1300));",
+                  "pm.collectionVariables.set('saldoConta', saldo);"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}" }
+        },
+        {
+          "name": "[Erro] Buscar investimento excluído (404)",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/investimentos/{{idInvestimento}}" }
+        },
+        {
+          "name": "[Erro] Excluir conta com saldo (400)",
+          "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}" }
+        },
+        {
+          "name": "Sacar saldo restante (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Conta zerada', () => pm.expect(Number(pm.response.json().saldo)).to.eql(0));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor\": {{saldoConta}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}/saques"
+          }
+        },
+        {
+          "name": "Excluir conta (204)",
+          "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/api/contas-bancarias/{{idConta}}" }
+        },
+        {
+          "name": "Excluir usuário (204)",
+          "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/api/usuarios/{{idUsuario}}" }
+        },
+        {
+          "name": "[Erro] Excluir usuário já excluído (404)",
+          "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/api/usuarios/{{idUsuario}}" }
+        }
+      ]
+    }
+  ]
+}
